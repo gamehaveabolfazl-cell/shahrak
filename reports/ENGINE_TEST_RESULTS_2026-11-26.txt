@@ -1,0 +1,11 @@
+# نتایج آزمون — ۲۶ نوامبر ۲۰۲۶
+
+- npm test: 64 passed, 0 failed.
+- npm run check: passed.
+- JavaScript syntax: 10 engine modules passed.
+- Project validation: Shahrak Zendegi 2.5.1 FullMigration passed; 1 scene, 476 objects, 281 entities, 2000 NPCs, 192 jobs, 23 assets.
+- Game source: node --check passed for embedded script extracted from ShahrakZendegi_Android_2.5.2_MobileUI.html.
+- Isolated logic reproduction: Meymand route returned empty path, 0 road km, 0.25 game hours, 22 coins from Kerman city center.
+- Save logic reproduction: minute=0 falls back to 480; malformed JSON triggers removal of the save key.
+- Touch audit: mobile E listener does not call interact(); blur handler does not clear touchKeys.
+- Browser/UI: Chromium headless timed out; no Android physical-device or Windows PC interaction test was completed.
