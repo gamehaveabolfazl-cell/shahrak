@@ -1,0 +1,340 @@
+--- a/engine/src/history.js
++++ b/engine/src/history.js
+@@ -40,16 +40,50 @@
+ 
+     trim() {
+       while (this.past.length > this.maxEntries) this.past.shift();
++      while (this.future.length > this.maxEntries) this.future.shift();
++
++      // Keep the nearest undo/redo snapshots within one shared memory budget.
++      // The current project is never discarded, even when it alone exceeds the cap.
+       let bytes = this.current.length * 2;
+-      for (let i = this.past.length - 1; i >= 0; i--) {
+-        const size = this.past[i].length * 2;
+-        if (bytes + size > this.maxBytes) {
+-          this.past.splice(0, i + 1);
+-          break;
++      const pastNearestFirst = this.past.slice().reverse();
++      const futureNearestFirst = this.future.slice().reverse();
++      const keptPast = [];
++      const keptFuture = [];
++      let pastIndex = 0;
++      let futureIndex = 0;
++      let takePast = true;
++      let pastBlocked = false;
++      let futureBlocked = false;
++
++      while ((!pastBlocked && pastIndex < pastNearestFirst.length) ||
++             (!futureBlocked && futureIndex < futureNearestFirst.length)) {
++        const canTakePast = !pastBlocked && pastIndex < pastNearestFirst.length;
++        const canTakeFuture = !futureBlocked && futureIndex < futureNearestFirst.length;
++        const usePast = canTakePast && (!canTakeFuture || takePast);
++        const candidate = usePast ? pastNearestFirst[pastIndex] : futureNearestFirst[futureIndex];
++        const size = candidate.length * 2;
++
++        if (bytes + size <= this.maxBytes) {
++          bytes += size;
++          if (usePast) {
++            keptPast.push(candidate);
++            pastIndex++;
++          } else {
++            keptFuture.push(candidate);
++            futureIndex++;
++          }
++        } else if (usePast) {
++          // Preserve a contiguous history: do not skip a large near snapshot
++          // to retain older snapshots behind it.
++          pastBlocked = true;
++        } else {
++          futureBlocked = true;
+         }
+-        bytes += size;
++        takePast = !usePast;
+       }
+-      while (this.future.length > this.maxEntries) this.future.shift();
++
++      this.past = keptPast.reverse();
++      this.future = keptFuture.reverse();
+     }
+ 
+     undo() {
+@@ -58,6 +92,7 @@
+       this.current = this.past.pop();
+       this.lastKey = null;
+       this.lastTime = 0;
++      this.trim();
+       return parse(this.current);
+     }
+ 
+--- /dev/null
++++ b/engine/src/asset-import.js
+@@ -0,0 +1,84 @@
++(function (root) {
++  'use strict';
++
++  const DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
++
++  function readAsDataURL(file, Reader = root.FileReader) {
++    return new Promise((resolve, reject) => {
++      if (typeof Reader !== 'function') {
++        reject(new Error('FileReader در این محیط در دسترس نیست.'));
++        return;
++      }
++      let reader;
++      try {
++        reader = new Reader();
++        reader.onload = () => {
++          if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
++            resolve(reader.result);
++          } else {
++            reject(new Error('مرورگر دادهٔ فایل را به قالب قابل‌ذخیره تبدیل نکرد.'));
++          }
++        };
++        reader.onerror = () => reject(reader.error || new Error('خواندن فایل ناموفق بود.'));
++        reader.onabort = () => reject(new Error('خواندن فایل لغو شد.'));
++        reader.readAsDataURL(file);
++      } catch (error) {
++        reject(error);
++      }
++    });
++  }
++
++  async function createAssetRecord(file, id, options = {}) {
++    const maxBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : DEFAULT_MAX_BYTES;
++    if (!file || typeof file.name !== 'string' || !file.name.trim() || !Number.isFinite(file.size) || file.size < 0) {
++      throw new Error('مشخصات فایل معتبر نیست.');
++    }
++    if (file.size > maxBytes) {
++      throw new Error(`فایل بزرگ‌تر از سقف ${Math.round(maxBytes / 1024 / 1024)} مگابایت است.`);
++    }
++    const data = await readAsDataURL(file, options.FileReader || root.FileReader);
++    return {
++      id,
++      name: file.name,
++      type: file.type || 'application/octet-stream',
++      size: file.size,
++      data,
++      addedAt: new Date().toISOString()
++    };
++  }
++
++  async function importAssetFiles(existingAssets, files, options = {}) {
++    const assets = Array.isArray(existingAssets) ? existingAssets.slice() : [];
++    const result = { assets, imported: 0, skipped: 0, errors: [] };
++    for (const file of Array.from(files || [])) {
++      const existingIndex = assets.findIndex(asset => asset && asset.name === file?.name);
++      const existing = existingIndex >= 0 ? assets[existingIndex] : null;
++      if (existing) {
++        let approved = false;
++        try { approved = typeof options.confirmReplace === 'function' && options.confirmReplace(file, existing); }
++        catch (error) {
++          result.errors.push({ fileName: file?.name || '', message: error.message || 'تأیید جایگزینی ناموفق بود.' });
++          continue;
++        }
++        if (!approved) {
++          result.skipped++;
++          continue;
++        }
++      }
++      try {
++        const id = typeof options.createId === 'function' ? options.createId(file) : '';
++        const record = await createAssetRecord(file, id, options);
++        if (existing) assets.splice(existingIndex, 1);
++        assets.push(record);
++        result.imported++;
++      } catch (error) {
++        result.errors.push({ fileName: file?.name || '', message: error.message || 'ورود فایل ناموفق بود.' });
++      }
++    }
++    return result;
++  }
++
++  const api = { DEFAULT_MAX_BYTES, readAsDataURL, createAssetRecord, importAssetFiles };
++  if (typeof module !== 'undefined' && module.exports) module.exports = api;
++  if (root) root.ShahrakEngineAssets = api;
++})(typeof globalThis !== 'undefined' ? globalThis : this);
+--- a/engine/src/editor.js
++++ b/engine/src/editor.js
+@@ -1,7 +1,7 @@
+ (function(){
+ 'use strict';
+-const Core=window.ShahrakEngineCore, Store=window.ShahrakEngineStorage, History=window.ShahrakHistory, Voice=window.ShahrakEngineVoice;
+-if(!Core||!Store||!History){alert('هستهٔ موتور بارگذاری نشد.');return;}
++const Core=window.ShahrakEngineCore, Store=window.ShahrakEngineStorage, History=window.ShahrakHistory, Voice=window.ShahrakEngineVoice, Assets=window.ShahrakEngineAssets;
++if(!Core||!Store||!History||!Assets){alert('هستهٔ موتور یا ابزار ورود دارایی بارگذاری نشد.');return;}
+ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+ const clone=Core.clone, fa=n=>String(n).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+@@ -90,7 +90,16 @@
+ 
+ // ---------- Asset management ----------
+ $('#importAssetsBtn').addEventListener('click',()=>$('#assetFileInput').click());
+-$('#assetFileInput').addEventListener('change',async e=>{let files=[...e.target.files];for(const file of files){if(file.size>15*1024*1024){alert(`${file.name} بزرگ‌تر از سقف ۱۵ مگابایت است.`);continue;}if(project.assets.some(a=>a.name===file.name)){if(!confirm(`${file.name} از قبل وجود دارد. دوباره وارد شود؟`))continue;project.assets=project.assets.filter(a=>a.name!==file.name);}const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});project.assets.push({id:newId('asset'),name:file.name,type:file.type||'application/octet-stream',size:file.size,data,addedAt:new Date().toISOString()});}markDirty('دارایی‌ها تغییر کردند');renderAssets();log(`${files.length} فایل بررسی و وارد شد.`);e.target.value='';});
++$('#assetFileInput').addEventListener('change',async e=>{
++ const result=await Assets.importAssetFiles(project.assets,[...e.target.files],{
++  createId:()=>newId('asset'),
++  confirmReplace:file=>confirm(`${file.name} از قبل وجود دارد. پس از خواندن موفق جایگزین شود؟`)
++ });
++ if(result.imported){project.assets=result.assets;markDirty('دارایی‌ها تغییر کردند');renderAssets();}
++ log(`ورود دارایی‌ها: ${result.imported} موفق، ${result.skipped} ردشده، ${result.errors.length} خطا.`,result.errors.length?'error':'info');
++ if(result.errors.length)alert('برخی فایل‌ها وارد نشدند:\n'+result.errors.map(item=>`${item.fileName}: ${item.message}`).join('\n'));
++ e.target.value='';
++});
+ function renderAssets(){const arr=project.assets;$('#assetSummary').innerHTML=`<span class="summary-pill">${fa(arr.length)} فایل</span><span class="summary-pill">${fa(Math.round(arr.reduce((s,a)=>s+(a.size||0),0)/1024))} کیلوبایت</span><span class="summary-pill">تصویر: ${fa(arr.filter(a=>a.type.startsWith('image/')).length)}</span><span class="summary-pill">صدا: ${fa(arr.filter(a=>a.type.startsWith('audio/')).length)}</span>`;$('#assetGrid').innerHTML=arr.map(a=>`<div class="asset-card"><div class="asset-preview">${a.type.startsWith('image/')?`<img src="${a.data||a.path||''}" alt="">`:a.type.startsWith('audio/')?(a.data?`<audio controls preload="none" src="${esc(a.data)}" aria-label="پیش‌نمایش ${esc(a.name)}"></audio>`:'<span class="asset-audio">♫</span>'):'<span>▧</span>'}</div><strong>${esc(a.name)}</strong><small>${esc(a.type)} · ${fa(Math.round(a.size/1024))} KB</small><button class="mini-btn" data-remove-asset="${esc(a.id)}" style="margin-top:8px">حذف فایل</button></div>`).join('')||'<div class="empty-state">هنوز دارایی وارد نشده است. PNG/JPG، صدا و فایل‌های متنی را وارد کن.</div>';$('#assetGrid').querySelectorAll('[data-remove-asset]').forEach(b=>b.onclick=()=>{project.assets=project.assets.filter(a=>a.id!==b.dataset.removeAsset);markDirty();renderAssets();});}
+ 
+ // ---------- Safe patch / backup ----------
+--- a/engine/index.html
++++ b/engine/index.html
+@@ -46,5 +46,5 @@
+ <footer class="statusbar"><span><i class="status-dot"></i> Shahrak Engine Runtime</span><span id="statusMessage">آمادهٔ کار</span><span>۲بعدی · داده‌محور · آفلاین</span></footer>
+ </div>
+ <dialog id="entityModal" class="modal"><form method="dialog"><div class="modal-head"><strong id="modalTitle">موجودیت تازه</strong><button class="icon-btn" value="cancel">×</button></div><div id="modalContent"></div><div class="modal-actions"><button value="cancel" class="ghost">انصراف</button><button id="modalConfirm" value="default" class="primary">ساخت</button></div></form></dialog>
+-<script src="src/core.js"></script><script src="src/history.js"></script><script src="src/navigation.js"></script><script src="src/ecs.js"></script><script src="src/runtime.js"></script><script src="src/storage.js"></script><script src="src/legacy-profile.js"></script><script src="src/voice.js"></script><script src="src/editor.js"></script>
++<script src="src/core.js"></script><script src="src/history.js"></script><script src="src/navigation.js"></script><script src="src/ecs.js"></script><script src="src/runtime.js"></script><script src="src/storage.js"></script><script src="src/legacy-profile.js"></script><script src="src/voice.js"></script><script src="src/asset-import.js"></script><script src="src/editor.js"></script>
+ </body></html>
+--- a/engine/scripts/check-code.cjs
++++ b/engine/scripts/check-code.cjs
+@@ -6,7 +6,7 @@
+ const root = path.resolve(__dirname, '..');
+ const targets = [
+   'src/core.js', 'src/ecs.js', 'src/editor.js', 'src/history.js',
+-  'src/legacy-profile.js', 'src/navigation.js', 'src/runtime.js', 'src/storage.js', 'src/voice.js'
++  'src/legacy-profile.js', 'src/navigation.js', 'src/runtime.js', 'src/storage.js', 'src/voice.js', 'src/asset-import.js'
+ ];
+ let failed = 0;
+ for (const relative of targets) {
+--- a/engine/package.json
++++ b/engine/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "shahrak-engine",
+-  "version": "0.3.1-port",
++  "version": "0.3.2-port",
+   "private": true,
+   "description": "Offline 2D/2.5D life-simulation editor, ECS runtime, navigation and safe project tools",
+   "scripts": {
+--- /dev/null
++++ b/engine/tests/asset-import.test.cjs
+@@ -0,0 +1,84 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { createAssetRecord, importAssetFiles } = require('../src/asset-import.js');
++
++class SuccessfulReader {
++  readAsDataURL(file) { this.result = `data:${file.type || 'application/octet-stream'};base64,QUJD`; this.onload(); }
++}
++
++class FailedReader {
++  readAsDataURL() { this.error = new Error('simulated read failure'); this.onerror(); }
++}
++
++class AbortedReader {
++  readAsDataURL() { this.onabort(); }
++}
++
++test('asset import creates a data URL record after successful reading', async () => {
++  const record = await createAssetRecord({ name: 'road.png', type: 'image/png', size: 3 }, 'asset_1', { FileReader: SuccessfulReader });
++  assert.equal(record.id, 'asset_1');
++  assert.equal(record.name, 'road.png');
++  assert.equal(record.data, 'data:image/png;base64,QUJD');
++});
++
++test('asset import rejects oversized files before reading', async () => {
++  let readerCreated = false;
++  class NeverReader { constructor() { readerCreated = true; } }
++  await assert.rejects(
++    createAssetRecord({ name: 'huge.bin', type: 'application/octet-stream', size: 20 }, 'asset_2', { maxBytes: 10, FileReader: NeverReader }),
++    /بزرگ‌تر از سقف/
++  );
++  assert.equal(readerCreated, false);
++});
++
++test('asset import reports FileReader errors and aborts instead of hanging', async () => {
++  const file = { name: 'broken.png', type: 'image/png', size: 3 };
++  await assert.rejects(createAssetRecord(file, 'asset_3', { FileReader: FailedReader }), /simulated read failure/);
++  await assert.rejects(createAssetRecord(file, 'asset_4', { FileReader: AbortedReader }), /لغو شد/);
++});
++
++test('asset import rejects missing FileReader and invalid file metadata', async () => {
++  await assert.rejects(createAssetRecord({ name: '', type: 'text/plain', size: 1 }, 'asset_5', { FileReader: SuccessfulReader }), /مشخصات فایل معتبر نیست/);
++  await assert.rejects(createAssetRecord({ name: 'x', type: 'text/plain', size: 1 }, 'asset_6', { FileReader: undefined }), /FileReader/);
++});
++
++
++test('failed duplicate replacement preserves the previous asset and later files continue', async () => {
++  class MixedReader {
++    readAsDataURL(file) {
++      if (file.name === 'same.png') {
++        this.error = new Error('read failed');
++        this.onerror();
++      } else {
++        this.result = `data:${file.type};base64,QUJD`;
++        this.onload();
++      }
++    }
++  }
++  const original = { id: 'old', name: 'same.png', type: 'image/png', size: 3, data: 'data:image/png;base64,OLD' };
++  const result = await importAssetFiles(
++    [original],
++    [
++      { name: 'same.png', type: 'image/png', size: 3 },
++      { name: 'new.png', type: 'image/png', size: 3 }
++    ],
++    { FileReader: MixedReader, createId: file => `new-${file.name}`, confirmReplace: () => true }
++  );
++  assert.equal(result.imported, 1);
++  assert.equal(result.errors.length, 1);
++  assert.equal(result.assets.find(asset => asset.name === 'same.png'), original);
++  assert.ok(result.assets.some(asset => asset.name === 'new.png'));
++});
++
++test('declined duplicate replacement is skipped without reading the file', async () => {
++  let reads = 0;
++  class CountingReader { readAsDataURL() { reads++; this.result = 'data:text/plain;base64,QQ=='; this.onload(); } }
++  const original = { id: 'old', name: 'same.txt', type: 'text/plain', size: 1 };
++  const result = await importAssetFiles([original], [{ name: 'same.txt', type: 'text/plain', size: 1 }], {
++    FileReader: CountingReader, createId: () => 'new', confirmReplace: () => false
++  });
++  assert.equal(result.skipped, 1);
++  assert.equal(result.imported, 0);
++  assert.equal(reads, 0);
++  assert.equal(result.assets[0], original);
++});
+--- a/engine/tests/editor-package.test.cjs
++++ b/engine/tests/editor-package.test.cjs
+@@ -26,3 +26,16 @@
+  assert.match(editor,/npcVoicePitch/);
+  assert.match(editor,/Voice\.speak/);
+ });
++
++
++test('asset import helper loads before the editor and failures are handled per file',()=>{
++ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
++ const refs=[...html.matchAll(/<script src="([^"]+)"/g)].map(m=>m[1]);
++ assert.ok(refs.indexOf('src/asset-import.js')<refs.indexOf('src/editor.js'));
++ const editor=fs.readFileSync(path.join(root,'src/editor.js'),'utf8');
++ assert.match(editor,/Assets\.importAssetFiles\(project\.assets/);
++ assert.match(editor,/result\.errors\.map/);
++ const helper=fs.readFileSync(path.join(root,'src/asset-import.js'),'utf8');
++ assert.match(helper,/result\.errors\.push/);
++ assert.match(editor,/Assets\.importAssetFiles/);
++});
+--- a/engine/tests/history.test.cjs
++++ b/engine/tests/history.test.cjs
+@@ -33,3 +33,16 @@
+   assert.equal(h.undoCount, 2);
+   assert.deepEqual(h.undo(), { value: 2 });
+ });
++
++
++test('history byte budget includes both undo and redo snapshots', () => {
++  const payload = value => ({ value, blob: 'x'.repeat(230000) });
++  const h = new HistoryManager(payload(0), { maxBytes: 1024 * 1024, maxEntries: 40, coalesceMs: 0 });
++  h.commit(payload(1), { now: 1000 });
++  h.commit(payload(2), { now: 2000 });
++  h.undo();
++
++  const retainedBytes = (h.current.length + [...h.past, ...h.future].reduce((sum, item) => sum + item.length, 0)) * 2;
++  assert.ok(retainedBytes <= h.maxBytes, `retained ${retainedBytes} bytes over ${h.maxBytes}`);
++  assert.ok(h.canUndo || h.canRedo, 'at least the nearest retained history should remain');
++});
