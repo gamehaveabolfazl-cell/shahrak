@@ -1,0 +1,99 @@
+--- a/game.js
++++ b/game.js
+@@ -1789,3 +1789,7 @@
+-function SH25_makeTrip(target,landmarkId=null){
+- const p=activePlayer(),near=SH25_nearestCity(p),route=near&&near.distance<2600?SH25_route(near.city.id,target.id):null;
+- let road=route?route.road:(near?near.distance/35:0),sea=route?route.sea:0;
++function SH25_makeTrip(target,landmarkId=null,playerOverride=null){
++ const p=playerOverride||activePlayer(),near=SH25_nearestCity(p),route=near&&near.distance<2600?SH25_route(near.city.id,target.id):null;
++ let road=route?route.road:0,sea=route?route.sea:0,routeFallback=!route;
++ if(!route&&near){
++  const fallback=window.ShahrakTravelFallback.estimate({nearestCity:near.city,target,playerToNearestKm:near.distance/35});
++  road=fallback.roadKm;sea=fallback.seaKm;
++ }
+@@ -1794,3 +1798,3 @@
+- return {target,landmarkId,roadKm:road,seaKm:sea,hours,cost,path:route?.ids||[],from:near?.city?.name||'موقع فعلی',mode:sea>0?'زمینی و دریایی':'زمینی'};
+-}
+-function SH25_tripPanel(){const t=SH25_pendingTrip;if(!t)return;const path=t.path.map(id=>SH24_cityMap.get(id)?.name||id).join(' ← ')||'مسیر محلی';setPanel(`برنامهٔ سفر: ${escText(t.target.name)}`,`<div class="tile"><strong>سفر آزاد، بدون مأموریت اجباری</strong><p>${escText(t.from)} ← ${escText(t.target.name)}</p><small>${escText(t.target.province||'منطقه')} • ${t.mode}</small></div><div class="grid"><div class="tile"><strong>زمان سفر</strong><p>${faNum(t.hours.toFixed(1))} ساعت بازی</p></div><div class="tile"><strong>هزینه سفر</strong><p>${money(t.cost)}</p></div></div><div class="tile"><strong>مسیر پیشنهادی</strong><p>${escText(path)}</p><small>${faNum(Math.round(t.roadKm))} کیلومتر زمینی • ${faNum(Math.round(t.seaKm))} کیلومتر دریایی</small></div><p>سفر فقط با تأیید تو شروع می‌شود. می‌توانی هر زمان آن را لغو کنی؛ هیچ قرارداد آزادی منقضی نمی‌شود.</p><div class="grid"><button class="good" data-v25-trip-confirm>تأیید سفر</button><button data-v25-trip-cancel>لغو</button></div>`);}
++ return {target,landmarkId,roadKm:road,seaKm:sea,hours,cost,path:route?.ids||[],routeFallback,from:near?.city?.name||'موقع فعلی',mode:sea>0?'زمینی و دریایی':routeFallback?'زمینی • برآورد مستقیم':'زمینی'};
++}
++function SH25_tripPanel(){const t=SH25_pendingTrip;if(!t)return;const path=t.path.map(id=>SH24_cityMap.get(id)?.name||id).join(' ← ')||(t.routeFallback?'برآورد مستقیم؛ مسیر پیوسته در شبکهٔ فعلی ثبت نشده':'مسیر محلی');setPanel(`برنامهٔ سفر: ${escText(t.target.name)}`,`<div class="tile"><strong>سفر آزاد، بدون مأموریت اجباری</strong><p>${escText(t.from)} ← ${escText(t.target.name)}</p><small>${escText(t.target.province||'منطقه')} • ${t.mode}</small></div><div class="grid"><div class="tile"><strong>زمان سفر</strong><p>${faNum(t.hours.toFixed(1))} ساعت بازی</p></div><div class="tile"><strong>هزینه سفر</strong><p>${money(t.cost)}</p></div></div><div class="tile"><strong>مسیر پیشنهادی</strong><p>${escText(path)}</p><small>${faNum(Math.round(t.roadKm))} کیلومتر زمینی • ${faNum(Math.round(t.seaKm))} کیلومتر دریایی</small></div><p>سفر فقط با تأیید تو شروع می‌شود. می‌توانی هر زمان آن را لغو کنی؛ هیچ قرارداد آزادی منقضی نمی‌شود.</p><div class="grid"><button class="good" data-v25-trip-confirm>تأیید سفر</button><button data-v25-trip-cancel>لغو</button></div>`);}
+--- a/game/game.js
++++ b/game/game.js
+@@ -1789,3 +1789,7 @@
+-function SH25_makeTrip(target,landmarkId=null){
+- const p=activePlayer(),near=SH25_nearestCity(p),route=near&&near.distance<2600?SH25_route(near.city.id,target.id):null;
+- let road=route?route.road:(near?near.distance/35:0),sea=route?route.sea:0;
++function SH25_makeTrip(target,landmarkId=null,playerOverride=null){
++ const p=playerOverride||activePlayer(),near=SH25_nearestCity(p),route=near&&near.distance<2600?SH25_route(near.city.id,target.id):null;
++ let road=route?route.road:0,sea=route?route.sea:0,routeFallback=!route;
++ if(!route&&near){
++  const fallback=window.ShahrakTravelFallback.estimate({nearestCity:near.city,target,playerToNearestKm:near.distance/35});
++  road=fallback.roadKm;sea=fallback.seaKm;
++ }
+@@ -1794,3 +1798,3 @@
+- return {target,landmarkId,roadKm:road,seaKm:sea,hours,cost,path:route?.ids||[],from:near?.city?.name||'موقع فعلی',mode:sea>0?'زمینی و دریایی':'زمینی'};
+-}
+-function SH25_tripPanel(){const t=SH25_pendingTrip;if(!t)return;const path=t.path.map(id=>SH24_cityMap.get(id)?.name||id).join(' ← ')||'مسیر محلی';setPanel(`برنامهٔ سفر: ${escText(t.target.name)}`,`<div class="tile"><strong>سفر آزاد، بدون مأموریت اجباری</strong><p>${escText(t.from)} ← ${escText(t.target.name)}</p><small>${escText(t.target.province||'منطقه')} • ${t.mode}</small></div><div class="grid"><div class="tile"><strong>زمان سفر</strong><p>${faNum(t.hours.toFixed(1))} ساعت بازی</p></div><div class="tile"><strong>هزینه سفر</strong><p>${money(t.cost)}</p></div></div><div class="tile"><strong>مسیر پیشنهادی</strong><p>${escText(path)}</p><small>${faNum(Math.round(t.roadKm))} کیلومتر زمینی • ${faNum(Math.round(t.seaKm))} کیلومتر دریایی</small></div><p>سفر فقط با تأیید تو شروع می‌شود. می‌توانی هر زمان آن را لغو کنی؛ هیچ قرارداد آزادی منقضی نمی‌شود.</p><div class="grid"><button class="good" data-v25-trip-confirm>تأیید سفر</button><button data-v25-trip-cancel>لغو</button></div>`);}
++ return {target,landmarkId,roadKm:road,seaKm:sea,hours,cost,path:route?.ids||[],routeFallback,from:near?.city?.name||'موقع فعلی',mode:sea>0?'زمینی و دریایی':routeFallback?'زمینی • برآورد مستقیم':'زمینی'};
++}
++function SH25_tripPanel(){const t=SH25_pendingTrip;if(!t)return;const path=t.path.map(id=>SH24_cityMap.get(id)?.name||id).join(' ← ')||(t.routeFallback?'برآورد مستقیم؛ مسیر پیوسته در شبکهٔ فعلی ثبت نشده':'مسیر محلی');setPanel(`برنامهٔ سفر: ${escText(t.target.name)}`,`<div class="tile"><strong>سفر آزاد، بدون مأموریت اجباری</strong><p>${escText(t.from)} ← ${escText(t.target.name)}</p><small>${escText(t.target.province||'منطقه')} • ${t.mode}</small></div><div class="grid"><div class="tile"><strong>زمان سفر</strong><p>${faNum(t.hours.toFixed(1))} ساعت بازی</p></div><div class="tile"><strong>هزینه سفر</strong><p>${money(t.cost)}</p></div></div><div class="tile"><strong>مسیر پیشنهادی</strong><p>${escText(path)}</p><small>${faNum(Math.round(t.roadKm))} کیلومتر زمینی • ${faNum(Math.round(t.seaKm))} کیلومتر دریایی</small></div><p>سفر فقط با تأیید تو شروع می‌شود. می‌توانی هر زمان آن را لغو کنی؛ هیچ قرارداد آزادی منقضی نمی‌شود.</p><div class="grid"><button class="good" data-v25-trip-confirm>تأیید سفر</button><button data-v25-trip-cancel>لغو</button></div>`);}
+--- /dev/null
++++ b/game/travel-fallback.js
+@@ -0,0 +1,48 @@
++(function (root) {
++  'use strict';
++
++  const EARTH_RADIUS_KM = 6371;
++
++  function validPoint(point) {
++    return !!point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lon));
++  }
++
++  function distanceKm(a, b) {
++    if (!validPoint(a) || !validPoint(b)) {
++      throw new TypeError('مختصات مبدأ و مقصد برای برآورد سفر معتبر نیستند.');
++    }
++    const rad = value => value * Math.PI / 180;
++    const dLat = rad(Number(b.lat) - Number(a.lat));
++    const dLon = rad(Number(b.lon) - Number(a.lon));
++    const latA = rad(Number(a.lat));
++    const latB = rad(Number(b.lat));
++    const h = Math.sin(dLat / 2) ** 2 + Math.cos(latA) * Math.cos(latB) * Math.sin(dLon / 2) ** 2;
++    return EARTH_RADIUS_KM * 2 * Math.asin(Math.sqrt(Math.min(1, h)));
++  }
++
++  function estimate(options = {}) {
++    const nearestCity = options.nearestCity;
++    const target = options.target;
++    const approachKm = Number(options.playerToNearestKm ?? 0);
++    const detourFactor = Number(options.detourFactor ?? 1.08);
++    if (!Number.isFinite(approachKm) || approachKm < 0) {
++      throw new RangeError('فاصلهٔ بازیکن تا نزدیک‌ترین شهر معتبر نیست.');
++    }
++    if (!Number.isFinite(detourFactor) || detourFactor < 1 || detourFactor > 2) {
++      throw new RangeError('ضریب برآورد مسیر باید بین ۱ و ۲ باشد.');
++    }
++    const directKm = distanceKm(nearestCity, target);
++    return {
++      roadKm: approachKm + directKm * detourFactor,
++      seaKm: 0,
++      directKm,
++      approachKm,
++      routeFallback: true,
++      path: []
++    };
++  }
++
++  const api = { EARTH_RADIUS_KM, distanceKm, estimate };
++  if (typeof module !== 'undefined' && module.exports) module.exports = api;
++  if (root) root.ShahrakTravelFallback = api;
++})(typeof globalThis !== 'undefined' ? globalThis : this);
+--- a/index.html
++++ b/index.html
+@@ -37,0 +38 @@
++<script src="./game/travel-fallback.js" defer></script>
+--- a/game/index.html
++++ b/game/index.html
+@@ -34,0 +35 @@
++<script src="./travel-fallback.js" defer></script>
