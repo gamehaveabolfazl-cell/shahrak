@@ -1,0 +1,61 @@
+--- a/tests/game-runtime.test.cjs
++++ b/tests/game-runtime.test.cjs
+@@ -17,0 +18,3 @@
++ assert.equal(d.fallbackTrips.length,2);
++ assert.ok(d.fallbackTrips.every(t=>t&&t.routeFallback&&t.roadKm>80&&t.hours>1&&t.cost>22));
++ assert.ok(d.fallbackTrips[0].roadKm>100&&d.fallbackTrips[1].roadKm>80);
+--- a/tests/game-runtime-harness.cjs
++++ b/tests/game-runtime-harness.cjs
+@@ -4,0 +5 @@
++const travelFallback=require('../game/travel-fallback.js');
+@@ -35 +36 @@
+-const sandbox={document,window:null,self:null,innerWidth:1280,innerHeight:820,devicePixelRatio:1,
++const sandbox={document,window:null,self:null,ShahrakTravelFallback:travelFallback,innerWidth:1280,innerHeight:820,devicePixelRatio:1,
+@@ -41 +42,2 @@
+-const source=fs.readFileSync(path.join(__dirname,'..','game','game.js'),'utf8');
++let source=fs.readFileSync(path.join(__dirname,'..','game','game.js'),'utf8');
++source=source.replace('exportEngineProfile:()=>SH25_exportEngineProfile()}',"exportEngineProfile:()=>SH25_exportEngineProfile(),makeTrip:(cityId,fromCityId)=>{const c=SH24_cityMap.get(cityId),from=fromCityId?SH24_cityMap.get(fromCityId):null;if(!c)return null;return from?SH25_makeTrip(c,null,{...activePlayer(),x:from.x,y:from.y}):SH25_makeTrip(c)} }");
+@@ -47,0 +50 @@
++const fallbackTrips=['raver','rayen'].map(id=>sandbox.SH25_DEBUG?.makeTrip?.(id,'kerman')||null);
+@@ -51 +54 @@
+-const report={engineProfileSummary,speechSmoke,routeSmoke,legacyStats:sandbox.SH23_DEBUG?.stats,v24Stats:sandbox.SH24_DEBUG?.stats,v25Stats:sandbox.SH25_DEBUG?.stats,legacy, v24, v25,spoken:spoken.length};
++const report={engineProfileSummary,speechSmoke,routeSmoke,fallbackTrips,legacyStats:sandbox.SH23_DEBUG?.stats,v24Stats:sandbox.SH24_DEBUG?.stats,v25Stats:sandbox.SH25_DEBUG?.stats,legacy, v24, v25,spoken:spoken.length};
+--- /dev/null
++++ b/tests/travel-fallback.test.cjs
+@@ -0,0 +1,31 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { distanceKm, estimate } = require('../game/travel-fallback.js');
++
++const kerman = { lat: 30.2832, lon: 57.0788 };
++const raver = { lat: 31.266, lon: 56.806 };
++
++test('direct fallback computes a non-zero geographic distance for an isolated destination', () => {
++  const distance = distanceKm(kerman, raver);
++  assert.ok(distance > 100 && distance < 130, `unexpected distance ${distance}`);
++  const trip = estimate({ nearestCity: kerman, target: raver });
++  assert.equal(trip.routeFallback, true);
++  assert.equal(trip.path.length, 0);
++  assert.ok(trip.roadKm > distance);
++});
++
++test('fallback includes the player approach leg to the nearest city', () => {
++  const base = estimate({ nearestCity: kerman, target: raver });
++  const withApproach = estimate({ nearestCity: kerman, target: raver, playerToNearestKm: 12 });
++  assert.equal(withApproach.roadKm - base.roadKm, 12);
++});
++
++test('identical points produce zero direct distance', () => {
++  assert.equal(distanceKm(kerman, kerman), 0);
++});
++
++test('invalid coordinates and unsafe estimate options are rejected', () => {
++  assert.throws(() => distanceKm(kerman, { lat: NaN, lon: 57 }), /مختصات/);
++  assert.throws(() => estimate({ nearestCity: kerman, target: raver, playerToNearestKm: -1 }), /فاصله/);
++  assert.throws(() => estimate({ nearestCity: kerman, target: raver, detourFactor: 3 }), /ضریب/);
++});
+--- a/scripts/verify-port.cjs
++++ b/scripts/verify-port.cjs
+@@ -17 +17 @@
+-check('External game script and local CSP are wired',()=>{const html=fs.readFileSync(path.join(root,'game/index.html'),'utf8');if(!/<script src="\.\/game\.js" defer><\/script>/.test(html))throw Error('game.js reference missing.');if(!html.includes("script-src 'self'")||!html.includes("connect-src 'none'"))throw Error('Restrictive CSP not found.');});
++check('External game script, travel fallback and local CSP are wired',()=>{const html=fs.readFileSync(path.join(root,'game/index.html'),'utf8');if(!/<script src="\.\/travel-fallback\.js" defer><\/script>\s*<script src="\.\/game\.js" defer><\/script>/.test(html))throw Error('Local travel helper must load before game.js.');if(!fs.existsSync(path.join(root,'game/travel-fallback.js')))throw Error('Travel fallback module missing.');if(!html.includes("script-src 'self'")||!html.includes("connect-src 'none'"))throw Error('Restrictive CSP not found.');});
