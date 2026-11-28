@@ -45,7 +45,7 @@
 - کنترل لمسی از Pointer Events استفاده می‌کند؛ رویدادهای `pointerdown/up/cancel` وجود دارند. آزمون واقعی Android و بررسی رفتار از دست‌رفتن focus/pointer capture انجام نشده است.
 - مسیر ذخیره/بارگذاری و افزونهٔ `world.v24` در کد موجود است؛ ذخیرهٔ خراب در مسیر پایه حذف نمی‌شود، اما مهاجرت جدید خانواده/مدرسه هنوز ساخته نشده است.
 - Shahrak Engine داخل بستهٔ محلی `0.3.0-port` است. تست‌های مستقل موتور موفق‌اند؛ در این نوبت کد موتور تغییر نکرد و Gameplay هنوز به ECS موتور بازنویسی نشده است.
-- مخزن GitHub در شاخهٔ `main` سورس بازی/موتور را ندارد؛ فایل‌های ریشهٔ قابل مشاهده فقط `CNAME`، `README.md` و `index.html` هستند. بنابراین باینری ۵۰ مگابایتی یا سورس کامل به مخزن اضافه نشد؛ فقط patch متنی و گزارش برای بازبینی منتشر می‌شوند.
+- مخزن GitHub در شاخهٔ `main` سورس بازی/موتور را ندارد؛ فایل‌های ریشهٔ قابل مشاهده فقط `CNAME`، `README.md` و `index.html` هستند. بنابراین باینری ۵۰ مگابایتی یا سورس کامل به مخزن اضافه نشد؛ فقط دو patch متنی و گزارش برای بازبینی منتشر می‌شوند.
 
 ## تست‌های اجراشده پس از اصلاح
 
@@ -69,7 +69,8 @@
 - تست‌ها: `tests/game-runtime.test.cjs`، `tests/game-runtime-harness.cjs`، `tests/travel-fallback.test.cjs`
 - اعتبارسنجی و مستندات: `scripts/verify-port.cjs`، `README_OFFLINE_FA.md`، `PORT_QA_FA.md`، `CHANGELOG_FA.md`، همین گزارش
 
-Patch متنی مستقل برای ۹ فایل کد/تست ساخته و با `patch --dry-run` و اعمال واقعی روی نسخهٔ پشتیبان آزمایش شد؛ هر ۹ فایل خروجی با بستهٔ نهایی یکسان‌اند.
+دو Patch متنی مستقل (Runtime و Tests) برای ۹ فایل کد/تست ساخته و با `patch --dry-run` و اعمال واقعی روی نسخهٔ پشتیبان آزمایش شدند؛ هر ۹ فایل خروجی با بستهٔ نهایی یکسان‌اند.
 
-- SHA-256 patch: `ba4aad7c203646754ed6e9fa6d4f4361258606e77a337b19161977caa034834e`
-- ZIP نهایی حدود ۵۱ مگابایت است و فقط به‌صورت پیوست آزمایشی ارائه می‌شود؛ در GitHub بارگذاری نشده است.
+- Runtime patch: `gameplay-patches/ShahrakZendegi_2.5.1_FastTravel_Runtime.patch` — SHA-256: `bfc43b294267988040ada7768ae1dae0fcc23b435244d73cf45a21dcc82648c7`
+- Tests patch: `gameplay-patches/ShahrakZendegi_2.5.1_FastTravel_Tests.patch` — SHA-256: `55fd32b21b54c6aaf6f284d9282d6881cfbe00c5f936d952df3ed1552058f88c`
+- ZIP نهایی حدود ۵۱ مگابایت است و فقط به‌صورت پیوست آزمایشی ارائه می‌شود؛ در GitHub بارگذاری نشده است. SHA-256: `dc0cced34af91563f9ea98fa39f4bb5502cc2142a2dc204c19dce2e72006d66d`
